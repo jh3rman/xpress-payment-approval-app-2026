@@ -171,8 +171,22 @@ export default function NewOrderForm({ defaultFromEmail, prefillData }: NewOrder
       setCreatedOrderToken(result.order.token);
 
       if (sendEmail) {
-        // In Phase 1, we don't actually send email
-        setError('Email not implemented in Phase 1. Order created successfully.');
+        // Send initial email (Phase 2)
+        try {
+          const emailResponse = await fetch(`/api/orders/${result.order.id}/send-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resend: false }),
+          });
+
+          const emailResult = await emailResponse.json();
+
+          if (!emailResult.success) {
+            setError(`Order created, but email failed: ${emailResult.error}`);
+          }
+        } catch (emailError) {
+          setError('Order created, but email failed to send.');
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create order');
@@ -504,7 +518,7 @@ export default function NewOrderForm({ defaultFromEmail, prefillData }: NewOrder
           disabled={!isValidForm() || creating}
           className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
         >
-          {creating ? 'Creating...' : 'Create & Send Email (Not Implemented)'}
+          {creating ? 'Creating...' : 'Create & Send Email'}
         </button>
       </div>
 

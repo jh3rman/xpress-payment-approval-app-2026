@@ -3,6 +3,7 @@
 import { supabaseServer } from '@/lib/supabase/server';
 import { Settings, SettingsUpdate } from '@/lib/types/database';
 import { revalidatePath } from 'next/cache';
+import { DEFAULT_EMAIL_TEMPLATES } from '@/lib/email-templates';
 
 /**
  * Get the settings row (creates default if doesn't exist)
@@ -35,7 +36,7 @@ export async function getSettings(): Promise<Settings | null> {
  */
 async function createDefaultSettings(): Promise<Settings | null> {
   try {
-    const { data, error } = await supabaseServer
+    const { data, error} = await supabaseServer
       .from('settings')
       .insert({
         tip_mode: 'fixed',
@@ -43,7 +44,9 @@ async function createDefaultSettings(): Promise<Settings | null> {
         reminder_days: [3, 7, 14],
         auto_cancel_days: 20,
         notification_toggles: {},
-        email_templates: {},
+        email_templates: DEFAULT_EMAIL_TEMPLATES,
+        default_from_email: 'orders@example.com',
+        admin_notify_email: 'admin@example.com',
       })
       .select()
       .single();

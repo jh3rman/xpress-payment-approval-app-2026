@@ -3,6 +3,8 @@
 import { supabaseServer } from '@/lib/supabase/server';
 import { Message, SenderRole } from '@/lib/types/database';
 import { revalidatePath } from 'next/cache';
+import { sendMessageToAdmin, sendMessageToCustomer } from '@/lib/mailgun';
+import { getSettings } from '@/app/admin/settings/actions';
 
 /**
  * Post a new message
@@ -65,6 +67,11 @@ export async function postMessage(
       order_id: orderId,
       event_type: sender === 'admin' ? 'admin_message' : 'customer_message',
       metadata: { message_id: message.id },
+    });
+
+    // Send email notification (async, don't wait for it)
+    sendEmailNotification(orderId, message.body, sender).catch((error) => {
+      console.error('Failed to send message notification:', error);
     });
 
     revalidatePath(`/admin/orders/${orderId}`);
@@ -161,5 +168,90 @@ export async function toggleChat(
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
+  }
+}
+
+/**
+ * Send email notification for a new message (async helper)
+ */
+async function sendEmailNotification(
+  orderId: string,
+  messageBody: string,
+  sender: SenderRole
+): Promise<void> {
+  try {
+    // Get order details
+    const { data: order } = await supabaseServer
+      .from('orders')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+
+    if (!order) {
+      console.error('Order not found for email notification');
+      return;
+    }
+
+    // Get settings
+    const settings = await getSettings();
+    if (!settings || !settings.email_templates) {
+      console.error('Settings or templates not configured');
+      return;
+    }
+
+    const templates = settings.email_templates as any;
+    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
+
+    let result;
+
+    if (sender === 'customer') {
+      // Notify admin
+      if (!settings.admin_notify_email) {
+        console.error('Admin notify email not configured');
+        return;
+      }
+
+      result = await sendMessageToAdmin({
+        orderId: order.id,
+        orderToken: order.token,
+        orderTitle: order.order_title,
+        messageBody,
+        adminEmail: settings.admin_notify_email,
+        fromEmail: order.from_email,
+        templates,
+        settings,
+        appBaseUrl,
+      });
+    } else {
+      // Notify customer
+      result = await sendMessageToCustomer({
+        orderId: order.id,
+        orderToken: order.token,
+        orderTitle: order.order_title,
+        messageBody,
+        customerEmail: order.customer_email,
+        ccEmails: order.cc_emails || [],
+        fromEmail: order.from_email,
+        templates,
+        settings,
+        appBaseUrl,
+      });
+    }
+
+    // Log email attempt
+    await supabaseServer.from('email_attempts').insert({
+      order_id: order.id,
+      email_type: sender === 'customer' ? 'msg_to_admin' : 'msg_to_customer',
+      to_emails: sender === 'customer' ? [settings.admin_notify_email!] : [order.customer_email],
+      provider_message_id: result.messageId,
+      status: result.success ? 'sent' : 'failed',
+      error: result.success ? null : { message: result.error },
+    });
+
+    if (!result.success) {
+      console.error('Failed to send message notification email:', result.error);
+    }
+  } catch (error) {
+    console.error('Error in sendEmailNotification:', error);
   }
 }

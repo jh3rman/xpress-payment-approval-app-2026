@@ -2,6 +2,21 @@
 
 export type TipMode = 'fixed' | 'percent';
 
+export type EmailTemplates = {
+  initial_email_subject: string;
+  initial_email_body_html: string;
+  reminder_email_subject: string;
+  reminder_email_body_html: string;
+  cancellation_email_subject: string;
+  cancellation_email_body_html: string;
+  revival_email_subject: string;
+  revival_email_body_html: string;
+  msg_to_customer_subject: string;
+  msg_to_customer_body_html: string;
+  msg_to_admin_subject: string;
+  msg_to_admin_body_html: string;
+};
+
 export type Settings = {
   id: string;
   // Company Profile
@@ -27,7 +42,7 @@ export type Settings = {
   // Notification Toggles
   notification_toggles: Record<string, unknown>;
   // Email Templates
-  email_templates: Record<string, unknown>;
+  email_templates: EmailTemplates;
   // Timestamps
   created_at: string;
   updated_at: string;
@@ -55,7 +70,10 @@ export type Order = {
   status: OrderStatus;
   chat_open: boolean;
   email_issue: boolean;
+  email_issue_reason: string | null;
   initial_email_sent_at: string | null;
+  last_email_sent_at: string | null;
+  initial_email_status: string;
   first_viewed_at: string | null;
   last_viewed_at: string | null;
   view_count: number;
