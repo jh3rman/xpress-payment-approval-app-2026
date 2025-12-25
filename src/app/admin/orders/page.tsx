@@ -1,30 +1,111 @@
-export default function OrdersPage() {
+import { getOrders } from './actions';
+import OrdersTable from './OrdersTable';
+import Link from 'next/link';
+
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: { filter?: string };
+}) {
+  const filter = searchParams.filter as any;
+  const orders = await getOrders(filter ? { status: filter } : undefined);
+
+  // Calculate counts for filters
+  const allOrders = await getOrders();
+  const counts = {
+    total: allOrders.length,
+    pending: allOrders.filter((o) => o.status === 'pending').length,
+    completed: allOrders.filter((o) => o.status === 'completed').length,
+    cancelled: allOrders.filter((o) => o.status === 'cancelled').length,
+    archived: allOrders.filter((o) => o.status === 'archived').length,
+    not_sent: allOrders.filter((o) => !o.initial_email_sent_at).length,
+    email_issues: allOrders.filter((o) => o.email_issue).length,
+  };
+
   return (
-    <div className="bg-white shadow rounded-lg p-8 text-center">
-      <div className="max-w-md mx-auto">
-        <svg
-          className="mx-auto h-12 w-12 text-gray-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          aria-hidden="true"
+    <div>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Orders</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Manage customer orders and approvals.
+          </p>
+        </div>
+        <Link
+          href="/admin/orders/new"
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <h2 className="mt-4 text-2xl font-bold text-gray-900">Orders Page</h2>
-        <p className="mt-2 text-gray-600">
-          Coming in Phase 1
-        </p>
-        <p className="mt-4 text-sm text-gray-500">
-          This page will allow you to create and manage customer orders, upload files,
-          track approvals, and monitor payment status.
-        </p>
+          + New Order
+        </Link>
       </div>
+
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-2">
+        <FilterButton href="/admin/orders" label="All" count={counts.total} active={!filter} />
+        <FilterButton
+          href="/admin/orders?filter=pending"
+          label="Pending"
+          count={counts.pending}
+          active={filter === 'pending'}
+        />
+        <FilterButton
+          href="/admin/orders?filter=completed"
+          label="Completed"
+          count={counts.completed}
+          active={filter === 'completed'}
+        />
+        <FilterButton
+          href="/admin/orders?filter=cancelled"
+          label="Cancelled"
+          count={counts.cancelled}
+          active={filter === 'cancelled'}
+        />
+        <FilterButton
+          href="/admin/orders?filter=archived"
+          label="Archived"
+          count={counts.archived}
+          active={filter === 'archived'}
+        />
+        <FilterButton
+          href="/admin/orders?filter=not_sent"
+          label="Not Sent"
+          count={counts.not_sent}
+          active={filter === 'not_sent'}
+        />
+        <FilterButton
+          href="/admin/orders?filter=email_issues"
+          label="Email Issues"
+          count={counts.email_issues}
+          active={filter === 'email_issues'}
+        />
+      </div>
+
+      <OrdersTable orders={orders} />
     </div>
+  );
+}
+
+function FilterButton({
+  href,
+  label,
+  count,
+  active,
+}: {
+  href: string;
+  label: string;
+  count: number;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+        active
+          ? 'bg-blue-100 text-blue-700 border border-blue-300'
+          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+      }`}
+    >
+      {label} <span className="ml-1 text-xs">({count})</span>
+    </Link>
   );
 }
