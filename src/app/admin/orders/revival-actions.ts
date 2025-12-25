@@ -155,6 +155,12 @@ export async function approveRevivalRequest(
       })
       .eq('id', order.id);
 
+    // Delete reminder_sends to fully reset the reminder tracking
+    await supabaseServer
+      .from('reminder_sends')
+      .delete()
+      .eq('order_id', order.id);
+
     // Log activity
     await supabaseServer.from('activity_log').insert({
       order_id: order.id,

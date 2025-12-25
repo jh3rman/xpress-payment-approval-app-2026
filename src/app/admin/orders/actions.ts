@@ -9,6 +9,8 @@ import {
 } from '@/lib/types/database';
 import { generateOrderToken } from '@/lib/storage';
 import { revalidatePath } from 'next/cache';
+import { sendCancellationEmail } from '@/lib/mailgun';
+import { getSettings } from '../settings/actions';
 
 /**
  * Create a new order with files
@@ -218,9 +220,16 @@ export async function updateOrderStatus(
   status: OrderStatus
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const updateData: any = { status };
+
+    // If manually cancelling, set cancelled_at timestamp
+    if (status === 'cancelled') {
+      updateData.cancelled_at = new Date().toISOString();
+    }
+
     const { error } = await supabaseServer
       .from('orders')
-      .update({ status })
+      .update(updateData)
       .eq('id', orderId);
 
     if (error) {
@@ -228,10 +237,48 @@ export async function updateOrderStatus(
       return { success: false, error: error.message };
     }
 
+    // Send cancellation email if manually cancelling
+    if (status === 'cancelled') {
+      const order = await getOrderById(orderId);
+      if (order) {
+        const settings = await getSettings();
+        if (settings && settings.email_templates) {
+          const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
+
+          // Send cancellation email (fire and forget)
+          sendCancellationEmail({
+            orderId: order.id,
+            orderToken: order.token,
+            orderTitle: order.order_title,
+            customerEmail: order.customer_email,
+            ccEmails: order.cc_emails || [],
+            fromEmail: order.from_email,
+            templates: settings.email_templates,
+            settings,
+            appBaseUrl,
+          })
+            .then((result) => {
+              // Log email attempt
+              supabaseServer.from('email_attempts').insert({
+                order_id: order.id,
+                email_type: 'cancellation',
+                to_emails: [order.customer_email, ...(order.cc_emails || [])],
+                provider_message_id: result.messageId || null,
+                status: result.success ? 'sent' : 'failed',
+                error: result.success ? null : { message: result.error },
+              });
+            })
+            .catch((error) => {
+              console.error('Failed to send cancellation email:', error);
+            });
+        }
+      }
+    }
+
     // Log activity
     await supabaseServer.from('activity_log').insert({
       order_id: orderId,
-      event_type: 'status_changed',
+      event_type: status === 'cancelled' ? 'CANCELLED_MANUAL' : 'STATUS_CHANGED',
       metadata: { new_status: status },
     });
 

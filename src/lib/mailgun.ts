@@ -385,6 +385,7 @@ export async function sendReminderEmail({
   appBaseUrl,
   isFinalWarning,
   daysUntilCancellation,
+  whatsMissing,
 }: {
   orderId: string;
   orderToken: string;
@@ -397,6 +398,7 @@ export async function sendReminderEmail({
   appBaseUrl: string;
   isFinalWarning?: boolean;
   daysUntilCancellation?: number;
+  whatsMissing?: string[];
 }): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const orderUrl = `${appBaseUrl}/o/${orderToken}`;
 
@@ -421,6 +423,19 @@ export async function sendReminderEmail({
 
   let subject = renderTemplate(templates.reminder_email_subject, templateData);
   let bodyHtml = renderTemplate(templates.reminder_email_body_html, templateData);
+
+  // Add what's missing section
+  if (whatsMissing && whatsMissing.length > 0) {
+    const missingHtml = `
+      <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0 0 10px 0; color: #92400e; font-weight: bold;">What's Missing:</p>
+        <ul style="margin: 0; padding-left: 20px; color: #78350f;">
+          ${whatsMissing.map(item => `<li>${item}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+    bodyHtml = bodyHtml.replace('</div>', `${missingHtml}</div>`);
+  }
 
   // Add final warning if applicable
   if (isFinalWarning && daysUntilCancellation !== undefined) {

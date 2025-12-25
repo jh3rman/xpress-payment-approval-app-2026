@@ -8,10 +8,31 @@ export default async function OrdersPage({
   searchParams: { filter?: string };
 }) {
   const filter = searchParams.filter as any;
-  const orders = await getOrders(filter ? { status: filter } : undefined);
+  let orders = await getOrders(
+    filter && filter !== 'expiring_soon' ? { status: filter } : undefined
+  );
 
   // Calculate counts for filters
   const allOrders = await getOrders();
+
+  // Helper to calculate days left
+  const getDaysLeft = (order: any): number | null => {
+    if (order.status === 'completed' || order.status === 'cancelled' || order.status === 'archived') {
+      return null;
+    }
+    if (!order.initial_email_sent_at) {
+      return null;
+    }
+    const initialSent = new Date(order.initial_email_sent_at);
+    const revivedAt = order.revived_at ? new Date(order.revived_at) : null;
+    const timelineStart = revivedAt && revivedAt > initialSent ? revivedAt : initialSent;
+    const now = new Date();
+    const diffMs = now.getTime() - timelineStart.getTime();
+    const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const autoCancelDays = 20; // Default, should match settings
+    return autoCancelDays - daysElapsed;
+  };
+
   const counts = {
     total: allOrders.length,
     pending: allOrders.filter((o) => o.status === 'pending').length,
@@ -20,7 +41,19 @@ export default async function OrdersPage({
     archived: allOrders.filter((o) => o.status === 'archived').length,
     not_sent: allOrders.filter((o) => !o.initial_email_sent_at).length,
     email_issues: allOrders.filter((o) => o.email_issue).length,
+    expiring_soon: allOrders.filter((o) => {
+      const daysLeft = getDaysLeft(o);
+      return daysLeft !== null && daysLeft < 7 && daysLeft >= 0;
+    }).length,
   };
+
+  // Apply expiring_soon filter if selected
+  if (filter === 'expiring_soon') {
+    orders = orders.filter((o) => {
+      const daysLeft = getDaysLeft(o);
+      return daysLeft !== null && daysLeft < 7 && daysLeft >= 0;
+    });
+  }
 
   return (
     <div>
@@ -65,6 +98,12 @@ export default async function OrdersPage({
           label="Archived"
           count={counts.archived}
           active={filter === 'archived'}
+        />
+        <FilterButton
+          href="/admin/orders?filter=expiring_soon"
+          label="Expiring Soon"
+          count={counts.expiring_soon}
+          active={filter === 'expiring_soon'}
         />
         <FilterButton
           href="/admin/orders?filter=not_sent"

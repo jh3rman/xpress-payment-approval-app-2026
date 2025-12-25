@@ -99,6 +99,36 @@ async function wasReminderAlreadySent(
 }
 
 /**
+ * Compute what's missing for an order
+ */
+async function computeWhatsMissing(orderId: string, paymentRequired: boolean): Promise<string[]> {
+  const missing: string[] = [];
+
+  // Get approvals
+  const { data: approval } = await supabaseServer
+    .from('approvals')
+    .select('*')
+    .eq('order_id', orderId)
+    .single();
+
+  if (approval) {
+    if (approval.invoice_status !== 'approved') {
+      missing.push('Invoice approval');
+    }
+    if (approval.artwork_status !== 'approved') {
+      missing.push('Artwork approval');
+    }
+  }
+
+  // Payment is always missing in Phase 3 if payment_required = true
+  if (paymentRequired) {
+    missing.push('Payment');
+  }
+
+  return missing;
+}
+
+/**
  * Send a reminder email for an order
  */
 async function sendReminder(
@@ -117,6 +147,9 @@ async function sendReminder(
       return { success: true };
     }
 
+    // Compute what's missing
+    const whatsMissing = await computeWhatsMissing(order.id, order.payment_required);
+
     // Send the reminder email
     const result = await sendReminderEmail({
       orderId: order.id,
@@ -130,6 +163,7 @@ async function sendReminder(
       appBaseUrl: APP_BASE_URL,
       isFinalWarning,
       daysUntilCancellation: isFinalWarning ? autoCancelDays - (reminderNumber + 1) : undefined,
+      whatsMissing,
     });
 
     if (!result.success) {
