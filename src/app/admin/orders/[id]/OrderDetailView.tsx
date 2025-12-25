@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { OrderWithRelations } from '@/lib/types/database';
+import { OrderWithRelations, RevivalRequest } from '@/lib/types/database';
 import { formatDateTime, formatCents } from '@/lib/utils';
 import { updateOrderStatus, updateApprovalStatus } from '../actions';
 import { postMessage } from '../message-actions';
+import { getRevivalRequests, approveRevivalRequest, rejectRevivalRequest } from '../revival-actions';
 
 interface OrderDetailViewProps {
   order: OrderWithRelations;
@@ -16,8 +17,19 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
   const [order, setOrder] = useState(initialOrder);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [revivalRequests, setRevivalRequests] = useState<RevivalRequest[]>([]);
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   const customerUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/o/${order.token}`;
+
+  // Load revival requests
+  useEffect(() => {
+    const loadRevivalRequests = async () => {
+      const requests = await getRevivalRequests(order.id);
+      setRevivalRequests(requests);
+    };
+    loadRevivalRequests();
+  }, [order.id]);
 
   const copyUrl = () => {
     navigator.clipboard.writeText(customerUrl);
@@ -77,6 +89,56 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
     }
   };
 
+  const handleSendReminder = async () => {
+    if (!confirm('Send a reminder email to the customer?')) return;
+
+    setSendingReminder(true);
+    try {
+      const response = await fetch(`/api/orders/${order.id}/send-reminder`, {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Reminder sent successfully');
+        router.refresh();
+      } else {
+        alert(data.error || 'Failed to send reminder');
+      }
+    } catch (error) {
+      alert('Failed to send reminder');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  const handleApproveRevival = async (requestId: string) => {
+    const notes = prompt('Optional admin notes:');
+    if (notes === null) return; // User cancelled
+
+    const result = await approveRevivalRequest(requestId, notes || undefined);
+    if (result.success) {
+      alert('Revival request approved. Order timeline has been reset.');
+      router.refresh();
+    } else {
+      alert(result.error || 'Failed to approve revival request');
+    }
+  };
+
+  const handleRejectRevival = async (requestId: string) => {
+    const notes = prompt('Optional rejection reason:');
+    if (notes === null) return; // User cancelled
+
+    const result = await rejectRevivalRequest(requestId, notes || undefined);
+    if (result.success) {
+      alert('Revival request rejected.');
+      router.refresh();
+    } else {
+      alert(result.error || 'Failed to reject revival request');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -86,6 +148,21 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
           <p className="mt-1 text-sm text-gray-500">Created {formatDateTime(order.created_at)}</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => router.push(`/admin/orders/new?duplicate=${order.id}`)}
+            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+          >
+            Duplicate
+          </button>
+          {order.initial_email_sent_at && order.status !== 'cancelled' && order.status !== 'completed' && (
+            <button
+              onClick={handleSendReminder}
+              disabled={sendingReminder}
+              className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:bg-gray-400 text-sm"
+            >
+              {sendingReminder ? 'Sending...' : 'Send Reminder'}
+            </button>
+          )}
           <select
             value={order.status}
             onChange={(e) => handleStatusChange(e.target.value)}
@@ -230,6 +307,74 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revival Requests */}
+      {revivalRequests.length > 0 && (
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Revival Requests</h2>
+          <div className="space-y-4">
+            {revivalRequests.map((request) => (
+              <div
+                key={request.id}
+                className={`border rounded-lg p-4 ${
+                  request.status === 'pending'
+                    ? 'border-yellow-300 bg-yellow-50'
+                    : request.status === 'approved'
+                    ? 'border-green-300 bg-green-50'
+                    : 'border-red-300 bg-red-50'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          request.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : request.status === 'approved'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {formatDateTime(request.created_at)}
+                      </span>
+                    </div>
+                    {request.requester_message && (
+                      <p className="text-sm text-gray-700 mb-2">
+                        <strong>Message:</strong> {request.requester_message}
+                      </p>
+                    )}
+                    {request.admin_notes && (
+                      <p className="text-sm text-gray-600">
+                        <strong>Admin notes:</strong> {request.admin_notes}
+                      </p>
+                    )}
+                  </div>
+                  {request.status === 'pending' && (
+                    <div className="flex gap-2 ml-4">
+                      <button
+                        onClick={() => handleApproveRevival(request.id)}
+                        className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleRejectRevival(request.id)}
+                        className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

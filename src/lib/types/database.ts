@@ -74,6 +74,15 @@ export type Order = {
   initial_email_sent_at: string | null;
   last_email_sent_at: string | null;
   initial_email_status: string;
+  // Phase 3: Reminder and cancellation fields
+  reminder_schedule_days: number[] | null;
+  next_reminder_at: string | null;
+  last_reminder_sent_at: string | null;
+  reminder_send_count: number;
+  cancelled_at: string | null;
+  revived_at: string | null;
+  cancellation_due_at: string | null;
+  // View tracking
   first_viewed_at: string | null;
   last_viewed_at: string | null;
   view_count: number;
@@ -111,6 +120,33 @@ export type ActivityLog = {
   order_id: string;
   event_type: string;
   metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+// Phase 3: Revival Request Types
+export type RevivalRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export type RevivalRequest = {
+  id: string;
+  order_id: string;
+  requester_message: string | null;
+  status: RevivalRequestStatus;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  admin_notes: string | null;
+};
+
+// Phase 3: Reminder Send Ledger
+export type ReminderSend = {
+  id: string;
+  order_id: string;
+  reminder_number: number;
+  scheduled_for: string;
+  sent_at: string;
+  email_attempt_id: string | null;
+  is_final_warning: boolean;
   created_at: string;
 };
 

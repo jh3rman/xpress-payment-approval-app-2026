@@ -8,6 +8,36 @@ interface OrdersTableProps {
   orders: OrderWithRelations[];
 }
 
+/**
+ * Calculate days left until auto-cancellation
+ * Returns null if timeline hasn't started or order is completed/cancelled
+ */
+function getDaysLeft(order: OrderWithRelations, autoCancelDays: number = 20): number | null {
+  // Only calculate for pending/in_progress orders
+  if (order.status === 'completed' || order.status === 'cancelled' || order.status === 'archived') {
+    return null;
+  }
+
+  // Timeline must have started
+  if (!order.initial_email_sent_at) {
+    return null;
+  }
+
+  // Get timeline start (most recent of initial_email_sent_at or revived_at)
+  const initialSent = new Date(order.initial_email_sent_at);
+  const revivedAt = order.revived_at ? new Date(order.revived_at) : null;
+  const timelineStart = revivedAt && revivedAt > initialSent ? revivedAt : initialSent;
+
+  // Calculate days elapsed
+  const now = new Date();
+  const diffMs = now.getTime() - timelineStart.getTime();
+  const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  // Calculate days remaining
+  const daysLeft = autoCancelDays - daysElapsed;
+  return daysLeft;
+}
+
 export default function OrdersTable({ orders }: OrdersTableProps) {
   if (orders.length === 0) {
     return (
@@ -60,6 +90,9 @@ export default function OrdersTable({ orders }: OrdersTableProps) {
               Approvals
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Days Left
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Viewed
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -72,6 +105,7 @@ export default function OrdersTable({ orders }: OrdersTableProps) {
             const messageCount = order.messages?.length || 0;
             const lastMessage = order.messages?.[order.messages.length - 1];
             const isCancelled = order.status === 'cancelled';
+            const daysLeft = getDaysLeft(order);
 
             return (
               <tr
@@ -126,6 +160,25 @@ export default function OrdersTable({ orders }: OrdersTableProps) {
                         </>
                       )}
                     </div>
+                  </Link>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <Link href={`/admin/orders/${order.id}`} className="block">
+                    {daysLeft !== null ? (
+                      <div
+                        className={cn(
+                          'font-medium',
+                          daysLeft < 0 && 'text-red-700',
+                          daysLeft >= 0 && daysLeft <= 3 && 'text-red-600',
+                          daysLeft > 3 && daysLeft <= 7 && 'text-yellow-600',
+                          daysLeft > 7 && 'text-green-600'
+                        )}
+                      >
+                        {daysLeft < 0 ? 'Overdue' : `${daysLeft} days`}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
                   </Link>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

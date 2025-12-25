@@ -371,6 +371,208 @@ export async function sendAdminAlert({
 }
 
 /**
+ * Send reminder email
+ */
+export async function sendReminderEmail({
+  orderId,
+  orderToken,
+  orderTitle,
+  customerEmail,
+  ccEmails,
+  fromEmail,
+  templates,
+  settings,
+  appBaseUrl,
+  isFinalWarning,
+  daysUntilCancellation,
+}: {
+  orderId: string;
+  orderToken: string;
+  orderTitle: string;
+  customerEmail: string;
+  ccEmails: string[];
+  fromEmail: string;
+  templates: EmailTemplates;
+  settings: any;
+  appBaseUrl: string;
+  isFinalWarning?: boolean;
+  daysUntilCancellation?: number;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const orderUrl = `${appBaseUrl}/o/${orderToken}`;
+
+  const templateData = {
+    ORDER_TITLE: orderTitle,
+    ORDER_URL: orderUrl,
+    COMPANY_NAME: settings.company_name || '',
+    COMPANY_PHONE: settings.phone || '',
+    COMPANY_EMAIL: settings.email || '',
+    COMPANY_ADDRESS: [
+      settings.address_line1,
+      settings.address_line2,
+      settings.city,
+      settings.state,
+      settings.zip,
+    ]
+      .filter(Boolean)
+      .join(', '),
+    COMPANY_HOURS: settings.hours || '',
+    COMPANY_WEBSITE_URL: settings.website_url || '',
+  };
+
+  let subject = renderTemplate(templates.reminder_email_subject, templateData);
+  let bodyHtml = renderTemplate(templates.reminder_email_body_html, templateData);
+
+  // Add final warning if applicable
+  if (isFinalWarning && daysUntilCancellation !== undefined) {
+    const warningHtml = `
+      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0; color: #991b1b; font-weight: bold;">⚠️ Final Reminder</p>
+        <p style="margin: 5px 0 0 0; color: #7f1d1d;">
+          This order will be automatically cancelled in ${daysUntilCancellation} days if not approved.
+        </p>
+      </div>
+    `;
+    bodyHtml = bodyHtml.replace('</div>', `${warningHtml}</div>`);
+  }
+
+  const footer = buildCompanyFooter(settings);
+  const html = `${bodyHtml}${footer}`;
+
+  return sendEmail({
+    to: [customerEmail],
+    cc: ccEmails,
+    from: fromEmail,
+    subject,
+    html,
+    tags: [
+      'reminder',
+      isFinalWarning ? 'final-reminder' : 'reminder',
+      `order:${orderId}`,
+    ],
+  });
+}
+
+/**
+ * Send cancellation email
+ */
+export async function sendCancellationEmail({
+  orderId,
+  orderToken,
+  orderTitle,
+  customerEmail,
+  ccEmails,
+  fromEmail,
+  templates,
+  settings,
+  appBaseUrl,
+}: {
+  orderId: string;
+  orderToken: string;
+  orderTitle: string;
+  customerEmail: string;
+  ccEmails: string[];
+  fromEmail: string;
+  templates: EmailTemplates;
+  settings: any;
+  appBaseUrl: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const orderUrl = `${appBaseUrl}/o/${orderToken}`;
+
+  const templateData = {
+    ORDER_TITLE: orderTitle,
+    ORDER_URL: orderUrl,
+    COMPANY_NAME: settings.company_name || '',
+    COMPANY_PHONE: settings.phone || '',
+    COMPANY_EMAIL: settings.email || '',
+    COMPANY_ADDRESS: [
+      settings.address_line1,
+      settings.address_line2,
+      settings.city,
+      settings.state,
+      settings.zip,
+    ]
+      .filter(Boolean)
+      .join(', '),
+    COMPANY_HOURS: settings.hours || '',
+    COMPANY_WEBSITE_URL: settings.website_url || '',
+  };
+
+  const subject = renderTemplate(templates.cancellation_email_subject, templateData);
+  const bodyHtml = renderTemplate(templates.cancellation_email_body_html, templateData);
+  const footer = buildCompanyFooter(settings);
+  const html = `${bodyHtml}${footer}`;
+
+  return sendEmail({
+    to: [customerEmail],
+    cc: ccEmails,
+    from: fromEmail,
+    subject,
+    html,
+    tags: ['cancellation', `order:${orderId}`],
+  });
+}
+
+/**
+ * Send revival email
+ */
+export async function sendRevivalEmail({
+  orderId,
+  orderToken,
+  orderTitle,
+  customerEmail,
+  ccEmails,
+  fromEmail,
+  templates,
+  settings,
+  appBaseUrl,
+}: {
+  orderId: string;
+  orderToken: string;
+  orderTitle: string;
+  customerEmail: string;
+  ccEmails: string[];
+  fromEmail: string;
+  templates: EmailTemplates;
+  settings: any;
+  appBaseUrl: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const orderUrl = `${appBaseUrl}/o/${orderToken}`;
+
+  const templateData = {
+    ORDER_TITLE: orderTitle,
+    ORDER_URL: orderUrl,
+    COMPANY_NAME: settings.company_name || '',
+    COMPANY_PHONE: settings.phone || '',
+    COMPANY_EMAIL: settings.email || '',
+    COMPANY_ADDRESS: [
+      settings.address_line1,
+      settings.address_line2,
+      settings.city,
+      settings.state,
+      settings.zip,
+    ]
+      .filter(Boolean)
+      .join(', '),
+    COMPANY_HOURS: settings.hours || '',
+    COMPANY_WEBSITE_URL: settings.website_url || '',
+  };
+
+  const subject = renderTemplate(templates.revival_email_subject, templateData);
+  const bodyHtml = renderTemplate(templates.revival_email_body_html, templateData);
+  const footer = buildCompanyFooter(settings);
+  const html = `${bodyHtml}${footer}`;
+
+  return sendEmail({
+    to: [customerEmail],
+    cc: ccEmails,
+    from: fromEmail,
+    subject,
+    html,
+    tags: ['revival', `order:${orderId}`],
+  });
+}
+
+/**
  * Verify Mailgun webhook signature
  */
 export function verifyWebhookSignature(

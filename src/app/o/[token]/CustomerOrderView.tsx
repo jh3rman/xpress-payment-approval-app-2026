@@ -16,6 +16,7 @@ export default function CustomerOrderView({ order: initialOrder, settings }: Cus
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState(order.messages || []);
   const [submitting, setSubmitting] = useState(false);
+  const [requestingRevival, setRequestingRevival] = useState(false);
 
   // Poll for new messages every 10 seconds
   useEffect(() => {
@@ -64,11 +65,6 @@ export default function CustomerOrderView({ order: initialOrder, settings }: Cus
       return;
     }
 
-    if (order.status === 'cancelled') {
-      alert('Cannot send messages on cancelled orders');
-      return;
-    }
-
     setSubmitting(true);
     const result = await postMessage(order.id, message, 'customer');
 
@@ -83,6 +79,32 @@ export default function CustomerOrderView({ order: initialOrder, settings }: Cus
 
   const handleDownload = async (storagePath: string, filename: string) => {
     window.open(`/api/download?path=${encodeURIComponent(storagePath)}`, '_blank');
+  };
+
+  const handleRequestRevival = async () => {
+    const revivalMessage = prompt('Optional message to include with your revival request:');
+    if (revivalMessage === null) return; // User cancelled
+
+    setRequestingRevival(true);
+    try {
+      const response = await fetch(`/api/orders/${order.token}/request-revival`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: revivalMessage || undefined }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Revival request submitted successfully. You will be notified when reviewed.');
+      } else {
+        alert(data.error || 'Failed to submit revival request');
+      }
+    } catch (error) {
+      alert('Failed to submit revival request');
+    } finally {
+      setRequestingRevival(false);
+    }
   };
 
   const companyName = settings?.company_name || 'XPress Payment & Approvals App';
@@ -103,6 +125,27 @@ export default function CustomerOrderView({ order: initialOrder, settings }: Cus
 
         {/* Main Card */}
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          {/* Cancelled Banner */}
+          {order.status === 'cancelled' && (
+            <div className="bg-red-100 border-b-2 border-red-600 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-red-900 font-bold text-lg">Order Cancelled</p>
+                  <p className="text-red-700 text-sm">
+                    This order has been cancelled. You can request to revive it if needed.
+                  </p>
+                </div>
+                <button
+                  onClick={handleRequestRevival}
+                  disabled={requestingRevival}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400 text-sm font-medium whitespace-nowrap ml-4"
+                >
+                  {requestingRevival ? 'Requesting...' : 'Request Revival'}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="p-6 space-y-6">
             {/* Order Title and Amount */}
             <div className="text-center border-b pb-6">
@@ -246,7 +289,7 @@ export default function CustomerOrderView({ order: initialOrder, settings }: Cus
                   <p className="text-sm text-gray-500 text-center py-4">No messages yet</p>
                 )}
               </div>
-              {order.chat_open && order.status !== 'cancelled' ? (
+              {order.chat_open ? (
                 <form onSubmit={handleSendMessage} className="flex gap-2">
                   <input
                     type="text"
