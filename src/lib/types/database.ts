@@ -55,6 +55,7 @@ export type OrderStatus = 'pending' | 'completed' | 'cancelled' | 'archived';
 export type ApprovalStatus = 'pending' | 'approved' | 'changes_requested';
 export type SenderRole = 'customer' | 'admin';
 export type FileType = 'invoice' | 'artwork';
+export type PaymentStatus = 'unpaid' | 'pending' | 'paid' | 'failed' | 'refunded';
 
 export type Order = {
   id: string;
@@ -82,6 +83,16 @@ export type Order = {
   cancelled_at: string | null;
   revived_at: string | null;
   cancellation_due_at: string | null;
+  // Phase 4: Payment fields
+  payment_status: PaymentStatus;
+  paid_at: string | null;
+  square_payment_id: string | null;
+  square_idempotency_key: string | null;
+  tip_amount_cents: number;
+  receipt_email: string | null;
+  receipt_phone: string | null;
+  customer_first_name: string | null;
+  customer_last_name: string | null;
   // View tracking
   first_viewed_at: string | null;
   last_viewed_at: string | null;
