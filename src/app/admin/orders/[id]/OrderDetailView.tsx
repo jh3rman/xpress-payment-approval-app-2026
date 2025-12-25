@@ -36,7 +36,18 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
   };
 
   const handleStatusChange = async (newStatus: string) => {
-    const confirmed = confirm(`Change order status to ${newStatus}?`);
+    // Better confirm messages for destructive actions
+    let confirmMessage = `Change order status to ${newStatus}?`;
+
+    if (newStatus === 'cancelled') {
+      confirmMessage = 'Are you sure you want to CANCEL this order? The customer will be notified and chat will be closed.';
+    } else if (newStatus === 'archived') {
+      confirmMessage = 'Archive this order? It will be hidden from the main list.';
+    } else if (newStatus === 'completed') {
+      confirmMessage = 'Mark this order as COMPLETED? This should only be done when all work is finished.';
+    }
+
+    const confirmed = confirm(confirmMessage);
     if (!confirmed) return;
 
     const result = await updateOrderStatus(order.id, newStatus as any);
@@ -176,6 +187,69 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
         </div>
       </div>
 
+      {/* Status Summary Panel */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Status Summary</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <dt className="text-xs font-medium text-gray-500 uppercase mb-1">Order Status</dt>
+            <dd>
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                order.status === 'completed' ? 'bg-green-100 text-green-800' :
+                order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {order.status}
+              </span>
+            </dd>
+          </div>
+          {order.payment_required && (
+            <div>
+              <dt className="text-xs font-medium text-gray-500 uppercase mb-1">Payment</dt>
+              <dd>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  order.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
+                  order.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                  order.payment_status === 'failed' ? 'bg-red-100 text-red-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {order.payment_status}
+                </span>
+              </dd>
+            </div>
+          )}
+          {order.approvals && (
+            <>
+              <div>
+                <dt className="text-xs font-medium text-gray-500 uppercase mb-1">Invoice</dt>
+                <dd>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    order.approvals.invoice_status === 'approved' ? 'bg-green-100 text-green-800' :
+                    order.approvals.invoice_status === 'changes_requested' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {order.approvals.invoice_status === 'changes_requested' ? 'changes' : order.approvals.invoice_status}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-gray-500 uppercase mb-1">Artwork</dt>
+                <dd>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    order.approvals.artwork_status === 'approved' ? 'bg-green-100 text-green-800' :
+                    order.approvals.artwork_status === 'changes_requested' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {order.approvals.artwork_status === 'changes_requested' ? 'changes' : order.approvals.artwork_status}
+                  </span>
+                </dd>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Customer URL */}
       <div className="bg-white shadow rounded-lg p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Customer Link</h2>
@@ -225,11 +299,43 @@ export default function OrderDetailView({ order: initialOrder }: OrderDetailView
             {order.payment_required && (
               <>
                 <div>
-                  <dt className="font-medium text-gray-500">Amount</dt>
+                  <dt className="font-medium text-gray-500">Payment Status</dt>
+                  <dd>
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        order.payment_status === 'paid'
+                          ? 'bg-green-100 text-green-800'
+                          : order.payment_status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : order.payment_status === 'failed'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {order.payment_status}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-gray-500">Order Amount</dt>
                   <dd className="text-gray-900 text-lg font-bold">
                     {order.order_amount_cents ? formatCents(order.order_amount_cents) : '$0.00'}
                   </dd>
                 </div>
+                {order.payment_status === 'paid' && order.tip_amount_cents > 0 && (
+                  <div>
+                    <dt className="font-medium text-gray-500">Tip Amount</dt>
+                    <dd className="text-gray-900 font-semibold">
+                      {formatCents(order.tip_amount_cents)}
+                    </dd>
+                  </div>
+                )}
+                {order.payment_status === 'paid' && order.paid_at && (
+                  <div>
+                    <dt className="font-medium text-gray-500">Paid At</dt>
+                    <dd className="text-gray-900">{formatDateTime(order.paid_at)}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="font-medium text-gray-500">Allow Tip</dt>
                   <dd className="text-gray-900">{order.allow_tip ? 'Yes' : 'No'}</dd>

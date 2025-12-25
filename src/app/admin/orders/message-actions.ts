@@ -5,6 +5,17 @@ import { Message, SenderRole } from '@/lib/types/database';
 import { revalidatePath } from 'next/cache';
 import { sendMessageToAdmin, sendMessageToCustomer } from '@/lib/mailgun';
 import { getSettings } from '@/app/admin/settings/actions';
+import { checkRateLimit, createRateLimitResponse } from '@/lib/rate-limiter';
+import { z } from 'zod';
+
+/**
+ * Message body validation schema
+ */
+const messageBodySchema = z
+  .string()
+  .min(1, 'Message cannot be empty')
+  .max(2000, 'Message too long (max 2000 characters)')
+  .trim();
 
 /**
  * Post a new message
@@ -15,13 +26,25 @@ export async function postMessage(
   sender: SenderRole
 ): Promise<{ success: boolean; message?: Message; error?: string }> {
   try {
-    // Basic validation
-    if (!body || body.trim().length === 0) {
-      return { success: false, error: 'Message cannot be empty' };
+    // Input validation with zod
+    const validation = messageBodySchema.safeParse(body);
+    if (!validation.success) {
+      return { success: false, error: validation.error.errors[0].message };
     }
 
-    if (body.length > 5000) {
-      return { success: false, error: 'Message too long (max 5000 characters)' };
+    const validatedBody = validation.data;
+
+    // Rate limiting (strict for customer messages to prevent spam)
+    if (sender === 'customer') {
+      const rateLimitKey = `chat:${orderId}`;
+      const { allowed, retryAfter } = await checkRateLimit(rateLimitKey, 'chat');
+
+      if (!allowed) {
+        return {
+          success: false,
+          error: `Slow down! Please wait ${retryAfter} seconds before sending another message.`,
+        };
+      }
     }
 
     // Check if chat is open (only for customer messages)
@@ -52,7 +75,7 @@ export async function postMessage(
       .insert({
         order_id: orderId,
         sender,
-        body: body.trim(),
+        body: validatedBody,
       })
       .select()
       .single();

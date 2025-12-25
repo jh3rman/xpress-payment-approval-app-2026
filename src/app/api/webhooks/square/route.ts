@@ -30,7 +30,22 @@ export async function POST(request: NextRequest) {
 
     // Parse the webhook payload
     const payload = JSON.parse(body);
-    const { type, data } = payload;
+    const { type, data, created_at } = payload;
+
+    // REPLAY PREVENTION: Reject webhooks older than 5 minutes
+    if (created_at) {
+      const webhookTime = new Date(created_at).getTime();
+      const now = Date.now();
+      const fiveMinutes = 5 * 60 * 1000;
+
+      if (now - webhookTime > fiveMinutes) {
+        console.warn('Rejected old webhook (possible replay attack):', created_at);
+        return NextResponse.json(
+          { error: 'Webhook too old' },
+          { status: 400 }
+        );
+      }
+    }
 
     console.log('Square webhook received:', type);
 
@@ -60,7 +75,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ received: true });
       }
 
-      // Idempotent update - only update if not already marked as paid via webhook
+      // Idempotent update - only update if not already marked as paid
+      // HARDENING: Never regress payment status (paid -> unpaid)
       if (status === 'COMPLETED' && order.payment_status !== 'paid') {
         console.log(`Marking order ${order.id} as paid via webhook`);
 
@@ -70,7 +86,8 @@ export async function POST(request: NextRequest) {
             payment_status: 'paid',
             paid_at: payment.created_at || new Date().toISOString(),
           })
-          .eq('id', order.id);
+          .eq('id', order.id)
+          .neq('payment_status', 'paid'); // Extra safety: don't overwrite if already paid
 
         // Log webhook confirmation
         await supabaseServer.from('activity_log').insert({
@@ -82,11 +99,13 @@ export async function POST(request: NextRequest) {
             payment_status: status,
           },
         });
-      } else if (status === 'FAILED' && order.payment_status !== 'failed') {
+      } else if (status === 'FAILED' && order.payment_status !== 'failed' && order.payment_status !== 'paid') {
+        // HARDENING: Don't mark as failed if already paid
         await supabaseServer
           .from('orders')
           .update({ payment_status: 'failed' })
-          .eq('id', order.id);
+          .eq('id', order.id)
+          .neq('payment_status', 'paid'); // Extra safety: don't regress paid status
 
         await supabaseServer.from('activity_log').insert({
           order_id: order.id,
@@ -95,6 +114,21 @@ export async function POST(request: NextRequest) {
             payment_id: paymentId,
             webhook_type: type,
             payment_status: status,
+          },
+        });
+      } else if (order.payment_status === 'paid' && status !== 'COMPLETED') {
+        // Log warning if webhook tries to change a paid order
+        console.warn(
+          `Webhook attempted to change paid order ${order.id} to status ${status}. Ignoring.`
+        );
+        await supabaseServer.from('activity_log').insert({
+          order_id: order.id,
+          event_type: 'PAYMENT_WEBHOOK_REJECTED',
+          metadata: {
+            payment_id: paymentId,
+            webhook_type: type,
+            payment_status: status,
+            reason: 'Cannot regress paid status',
           },
         });
       }

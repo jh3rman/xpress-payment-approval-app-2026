@@ -2,10 +2,41 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 import { createPayment } from '@/lib/square';
 import { v4 as uuidv4 } from 'uuid';
+import { checkRateLimit } from '@/lib/rate-limiter';
+import { z } from 'zod';
+
+/**
+ * Payment creation request schema
+ */
+const paymentRequestSchema = z.object({
+  orderToken: z.string().min(1),
+  sourceId: z.string().min(1),
+  tipSelection: z
+    .object({
+      type: z.enum(['none', 'preset', 'custom']),
+      index: z.number().optional(),
+      amount: z.string().optional(),
+    })
+    .optional(),
+  receipt_email: z.string().email().optional().or(z.literal('')),
+  receipt_phone: z.string().optional(),
+  customer_first_name: z.string().max(100).optional(),
+  customer_last_name: z.string().max(100).optional(),
+});
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+
+    // Input validation
+    const validation = paymentRequestSchema.safeParse(body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error.errors[0].message },
+        { status: 400 }
+      );
+    }
+
     const {
       orderToken,
       sourceId,
@@ -14,12 +45,16 @@ export async function POST(request: NextRequest) {
       receipt_phone,
       customer_first_name,
       customer_last_name,
-    } = body;
+    } = validation.data;
 
-    if (!orderToken || !sourceId) {
+    // Rate limiting (prevent payment spam/abuse)
+    const rateLimitKey = `payment:${orderToken}`;
+    const { allowed, retryAfter } = await checkRateLimit(rateLimitKey, 'payment');
+
+    if (!allowed) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+        { error: `Too many payment attempts. Please wait ${retryAfter} seconds.` },
+        { status: 429 }
       );
     }
 
@@ -46,6 +81,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Order already paid' },
         { status: 400 }
+      );
+    }
+
+    // DOUBLE-PAY PREVENTION: Check if payment is already in progress
+    if (order.payment_status === 'pending') {
+      return NextResponse.json(
+        { error: 'Payment already in progress. Please wait.' },
+        { status: 409 }
       );
     }
 
